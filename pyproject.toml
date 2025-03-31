@@ -1,0 +1,29 @@
+[tool.poetry]
+name = "ai_tools"
+version = "0.1.0"
+description = "ai scripts and tooling"
+authors = ["jgaluszczynski@spoton.com"]
+package-mode = false
+
+[tool.poetry.dependencies]
+python = "^3.11"
+#gitingest = {git = "https://github.com/cyclotruc/gitingest", rev = "main"}  ### install with pipenv, according to the repo
+
+[tool.poetry.group.dev.dependencies]
+black = "^23.3.0"
+flake8 = "^6.0.0"
+isort = "^5.12.0"
+
+[tool.black]
+line-length = 80
+profile = "black"
+target-version = ["py311"]
+
+[tool.isort]
+profile = "black"
+line_length = 80
+
+[tool.flake8]
+max-line-length = 80
+extend-ignore = "E203"
+exclude = [".git","__pycache__","build","dist"]
