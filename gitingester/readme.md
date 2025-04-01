@@ -54,7 +54,7 @@ The script generates a timestamped output file in the `_processed` directory, e.
 
 - gitingest somehow has issues with broad patterns such as `*.py` etc. Scoping works better if we use --incl=`src*` for our packages,
 `tests*` if needed, etc.
-
+- issue for include patterns: https://github.com/cyclotruc/gitingest/issues/224
 
 ## Links
 
