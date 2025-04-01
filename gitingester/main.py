@@ -118,5 +118,5 @@ if __name__ == "__main__":
         debug=args.debug,
         max_file_size=args.fs,
         include_patterns=set(args.incl.split(";")) if args.incl else None,
-        exclude_patterns=set(args.incl.split(";")) if args.excl else None,
+        exclude_patterns=set(args.excl.split(";")) if args.excl else None,
     )
