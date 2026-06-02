@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>maitrix</title>
+  <link rel="stylesheet" href="panel.css" />
+</head>
+<body>
+  <header class="header">
+    <div class="header-row">
+      <p id="meta" class="meta"></p>
+      <button type="button" id="openSettings" class="settings-btn" title="Settings" aria-label="Open settings"></button>
+    </div>
+  </header>
+  <p id="error" class="error" hidden></p>
+  <section class="section">
+    <h2 id="topTitle" class="section-title">TOP 5:</h2>
+    <div id="topList" class="rows"></div>
+  </section>
+  <section class="section">
+    <h2 class="section-title">My fav:</h2>
+    <div id="favorites" class="rows rows--horizontal"></div>
+    <p id="fav-hint" class="hint">Add models in extension options (dropdown).</p>
+  </section>
+  <footer id="variance" class="variance"></footer>
+  <script type="module" src="panel.js"></script>
+</body>
+</html>

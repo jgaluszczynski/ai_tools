@@ -1,0 +1,43 @@
+body {
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 13px;
+  max-width: 520px;
+  margin: 16px;
+  color: #1e293b;
+}
+h1.opt-brand {
+  font-size: 18px;
+  margin: 0 0 16px;
+  display: inline-block;
+  background: #000000;
+  padding: 5px;
+  border-radius: 4px;
+  line-height: 1.2;
+}
+label { display: block; margin-top: 12px; font-weight: 600; }
+textarea, input, select { width: 100%; margin-top: 4px; font-family: inherit; box-sizing: border-box; }
+.fav-add { display: flex; gap: 8px; margin-top: 4px; }
+.fav-add select { flex: 1; }
+.fav-add button { width: auto; flex-shrink: 0; margin-top: 0; }
+.fav-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; min-height: 28px; }
+.fav-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  background: #e0f2fe;
+  border: 1px solid #7dd3fc;
+  border-radius: 4px;
+  font-size: 12px;
+}
+.fav-tag button {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  color: #64748b;
+  font-size: 14px;
+  line-height: 1;
+  padding: 0 2px;
+}
+button { margin-top: 12px; margin-right: 8px; cursor: pointer; }
+.status { color: #64748b; font-size: 12px; }
