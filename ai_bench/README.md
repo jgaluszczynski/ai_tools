@@ -39,9 +39,11 @@ Open the panel → shows cached data, then fetches fresh data. Background refres
 
 From `modelScores`, e.g. `score=65`, `status=warning`, `is_stale=False` (no quotes on strings; values **bold**).
 
-Default chips: `score`, `current_score`, `standard_error`, `confidence_lower`, `confidence_upper`, `status`, `trend`, `is_stale`, `uses_reasoning_effort`
+**Visible chips by default** (after install exclusions): `score`, `status`, `trend`
 
-Extend in [`src/labels.js`](src/labels.js) (`MODEL_SCORE_LABELS`, `DEFAULT_METRICS`).
+Excluded by default: `current_score`, `confidence_lower`, `confidence_upper`, `is_stale`, `standard_error`, `uses_reasoning_effort`
+
+Full chip set: [`DEFAULT_METRICS`](src/labels.js) in `labels.js`; edit `DEFAULT_EXCLUDED_METRICS` or options to change what is hidden.
 
 ## Colors
 
