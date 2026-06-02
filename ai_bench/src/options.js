@@ -1,4 +1,12 @@
-import { MIN_TOP_COUNT, MAX_TOP_COUNT, DEFAULT_TOP_COUNT, MAX_FAVORITES } from "./labels.js";
+import {
+  MIN_TOP_COUNT,
+  MAX_TOP_COUNT,
+  DEFAULT_TOP_COUNT,
+  MAX_FAVORITES,
+  DEFAULT_EXCLUDED_METRICS,
+  parseExcludedMetrics,
+  formatExcludedMetricsForStorage,
+} from "./labels.js";
 
 const KEYS = ["favoriteModels", "excludedMetrics", "historyBarCount", "topCount"];
 
@@ -27,12 +35,14 @@ function fillModelPick(names) {
   placeholder.textContent = names.length ? "Select model…" : "— refresh to load models —";
   sel.appendChild(placeholder);
   const chosen = new Set(favoriteModels);
-  const list = names.length ? names : allModelNames;
+  const list = [...(names.length ? names : allModelNames)].sort((a, b) =>
+    a.localeCompare(b),
+  );
   for (const name of list) {
     const opt = document.createElement("option");
     opt.value = name;
     const rank = rankByName[name];
-    opt.textContent = rank != null ? `#${rank} ${name}` : name;
+    opt.textContent = rank != null ? `${name} (#${rank})` : name;
     if (chosen.has(name)) {
       opt.disabled = true;
       opt.textContent += " ✓";
@@ -110,10 +120,11 @@ async function load() {
       .filter(Boolean);
   }
   fillTopCountSelect(Number(data.topCount) || DEFAULT_TOP_COUNT);
+  const excluded = parseExcludedMetrics(data.excludedMetrics);
   document.getElementById("excluded").value =
-    typeof data.excludedMetrics === "string"
-      ? data.excludedMetrics
-      : (data.excludedMetrics || []).join("\n");
+    data.excludedMetrics === undefined
+      ? formatExcludedMetricsForStorage(DEFAULT_EXCLUDED_METRICS)
+      : formatExcludedMetricsForStorage(excluded);
   document.getElementById("historyBarCount").value = data.historyBarCount || 7;
   renderFavList();
   await loadModels();

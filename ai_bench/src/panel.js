@@ -1,4 +1,4 @@
-import { DEFAULT_METRICS } from "./labels.js";
+import { DEFAULT_METRICS, parseExcludedMetrics } from "./labels.js";
 import { filterMetricsForDisplay, mean, localDateKey, sortFavoritesByRank } from "./parse.js";
 import { renderSparkline } from "./sparkline.js";
 import {
@@ -279,11 +279,7 @@ async function loadPanel() {
     "excludedMetrics",
     "topCount",
   ]);
-  const excludedRaw = config.excludedMetrics || "";
-  const excludedMetrics =
-    typeof excludedRaw === "string"
-      ? excludedRaw.split(/[\n,]+/).map((s) => s.trim()).filter(Boolean)
-      : [];
+  const excludedMetrics = parseExcludedMetrics(config.excludedMetrics);
 
   const res = await chrome.runtime.sendMessage({ type: "GET_LATEST" });
   if (!res?.ok || !res.latest) {

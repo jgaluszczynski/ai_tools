@@ -5,6 +5,9 @@ import {
   REFRESH_ALARM_MINUTES,
   DEFAULT_TOP_COUNT,
   MODELS_API_URL,
+  DEFAULT_EXCLUDED_METRICS,
+  parseExcludedMetrics,
+  formatExcludedMetricsForStorage,
 } from "./labels.js";
 import {
   parseDashboard,
@@ -27,13 +30,7 @@ const SYNC_KEYS = [
 
 export async function getConfig() {
   const sync = await chrome.storage.sync.get(SYNC_KEYS);
-  const excludedRaw = sync.excludedMetrics || "";
-  const excludedMetrics =
-    typeof excludedRaw === "string"
-      ? excludedRaw.split(/[\n,]+/).map((s) => s.trim()).filter(Boolean)
-      : Array.isArray(excludedRaw)
-        ? excludedRaw
-        : [];
+  const excludedMetrics = parseExcludedMetrics(sync.excludedMetrics);
 
   let favoriteModels = Array.isArray(sync.favoriteModels) ? sync.favoriteModels : [];
   if (!favoriteModels.length && sync.favoritesText) {
@@ -147,9 +144,17 @@ export async function fetchAndStore() {
   return latest;
 }
 
-chrome.runtime.onInstalled.addListener(() => {
+chrome.runtime.onInstalled.addListener(async (details) => {
   chrome.alarms.create("refresh", { periodInMinutes: REFRESH_ALARM_MINUTES });
   chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
+  if (details.reason === "install") {
+    const existing = await chrome.storage.sync.get(["excludedMetrics"]);
+    if (existing.excludedMetrics === undefined) {
+      await chrome.storage.sync.set({
+        excludedMetrics: formatExcludedMetricsForStorage(DEFAULT_EXCLUDED_METRICS),
+      });
+    }
+  }
   fetchAndStore().catch((e) => storeError(e));
 });
 

@@ -29,8 +29,8 @@ Open the panel → shows cached data, then fetches fresh data. Background refres
 | Setting | Description |
 |--------|-------------|
 | **TOP models to show** | 3–10 (default 5) |
-| **My fav** | Dropdown of **all** catalog models (not only TOP N) + **Add**; remove with × on tags |
-| **Excluded metrics** | `snake_case` labels to hide from chips (one per line or comma-separated) |
+| **My fav** | Dropdown of **all** catalog models as `model-name (#rank)`, A–Z + **Add**; remove with × on tags |
+| **Excluded metrics** | `snake_case` labels to hide (one per line). **Defaults on first install:** `current_score`, `confidence_lower`, `confidence_upper`, `is_stale`, `standard_error`, `uses_reasoning_effort` |
 | **History bars** | Sparkline length, 5–24 (default 7) |
 
 **Save** stores settings. **Save & refresh** also fetches the dashboard immediately.

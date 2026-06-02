@@ -28,6 +28,30 @@ export const DEFAULT_METRICS = [
   "uses_reasoning_effort",
 ];
 
+/** Preloaded on first install; user can edit in options. */
+export const DEFAULT_EXCLUDED_METRICS = [
+  "current_score",
+  "confidence_lower",
+  "confidence_upper",
+  "is_stale",
+  "standard_error",
+  "uses_reasoning_effort",
+];
+
+export function parseExcludedMetrics(raw) {
+  if (raw === undefined || raw === null) return [...DEFAULT_EXCLUDED_METRICS];
+  if (typeof raw === "string") {
+    if (!raw.trim()) return [];
+    return raw.split(/[\n,]+/).map((s) => s.trim()).filter(Boolean);
+  }
+  if (Array.isArray(raw)) return [...raw];
+  return [];
+}
+
+export function formatExcludedMetricsForStorage(list) {
+  return list.join("\n");
+}
+
 export const DEFAULT_API_URL =
   "https://aistupidlevel.info/dashboard/cached?period=latest&sortBy=combined&analyticsPeriod=latest";
 
