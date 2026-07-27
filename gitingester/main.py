@@ -53,7 +53,9 @@ def process_directory(
     exclude_patterns = gitignore_excludes | exclude_patterns
 
     if debug:
-        print(f"\ninclude patterns:\n{include_patterns};\n\nexclude patterns:\n{exclude_patterns}\n")
+        print(
+            f"\ninclude patterns:\n{include_patterns};\n\nexclude patterns:\n{exclude_patterns}\n"
+        )
 
     _summary, _tree, _result = ingest(
         str(input_dir),
