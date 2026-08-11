@@ -1,0 +1,8 @@
+{
+  "manifest_version": 3,
+  "name": "HarRecorder",
+  "version": "1.0.0",
+  "description": "Record XHR/fetch traffic in DevTools, filter Network-panel-style, and download reduced HAR JSON.",
+  "devtools_page": "devtools.html",
+  "permissions": ["clipboardWrite"]
+}

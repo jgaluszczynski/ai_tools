@@ -1,7 +1,12 @@
-.PHONY: lint format check-all install
+.PHONY: lint format check-all lint/all install test
 
 # Run all checks
 check-all: lint format
+
+lint/all: check-all
+
+test:
+	node har_recorder/test/parity_test.mjs
 
 # Run linting tools
 lint:

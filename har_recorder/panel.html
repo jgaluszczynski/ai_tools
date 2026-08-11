@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>HarRecorder</title>
+  <link rel="stylesheet" href="panel.css" />
+</head>
+<body>
+  <header class="header">
+    <h1 class="title">HarRecorder</h1>
+    <p class="subtitle">Record XHR/fetch between Start and Stop, then export reduced JSON.</p>
+  </header>
+
+  <section class="controls">
+    <div class="button-row">
+      <button type="button" id="btnStart" class="btn btn--primary">Start</button>
+      <button type="button" id="btnStop" class="btn" disabled>Stop</button>
+      <button type="button" id="btnClear" class="btn btn--ghost">Clear</button>
+    </div>
+    <p id="status" class="status">Idle</p>
+  </section>
+
+  <section class="filters">
+    <label class="field">
+      <span class="field-label">Domain filter</span>
+      <input type="text" id="domainFilter" placeholder="e.g. api.example.com" />
+    </label>
+    <label class="field">
+      <span class="field-label">URL filters (Network panel syntax)</span>
+      <input
+        type="text"
+        id="urlFilter"
+        placeholder="token1 token2 -exclude"
+      />
+    </label>
+    <div class="button-row">
+      <button
+        type="button"
+        id="btnCopyFilter"
+        class="btn btn--ghost"
+        title="Chrome cannot open the Network panel with filters applied. This copies an equivalent filter string for manual paste."
+      >
+        Copy DevTools filter
+      </button>
+    </div>
+  </section>
+
+  <section class="options">
+    <label class="checkbox">
+      <input type="checkbox" id="redactSecrets" checked />
+      Redact secrets
+    </label>
+    <label class="field field--inline">
+      <span class="field-label">Max body chars</span>
+      <input type="number" id="maxBodyChars" value="20000" min="0" step="1000" />
+    </label>
+  </section>
+
+  <section class="stats" id="stats">
+    <div class="stat"><span class="stat-label">Entries</span><span id="statEntries">0 / 0</span></div>
+    <div class="stat"><span class="stat-label">Duration</span><span id="statDuration">—</span></div>
+    <div class="stat"><span class="stat-label">Export size</span><span id="statSize">—</span></div>
+  </section>
+
+  <section class="downloads">
+    <div class="button-row">
+      <button type="button" id="btnDownloadReduced" class="btn btn--primary" disabled>
+        Download reduced JSON
+      </button>
+      <button type="button" id="btnDownloadRaw" class="btn" disabled>
+        Download raw HAR
+      </button>
+    </div>
+  </section>
+
+  <section class="entries">
+    <h2 class="section-title">Captured requests</h2>
+    <ul id="entryList" class="entry-list"></ul>
+    <p id="emptyHint" class="hint">Start recording to capture XHR/fetch requests.</p>
+  </section>
+
+  <script type="module" src="panel.js"></script>
+</body>
+</html>
