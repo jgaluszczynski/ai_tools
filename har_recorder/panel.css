@@ -205,6 +205,14 @@ input[type="number"] {
   color: var(--muted);
 }
 
+.downloads .hint {
+  margin-top: 8px;
+}
+
+.hint.warn {
+  color: var(--danger);
+}
+
 .hint[hidden] {
   display: none;
 }

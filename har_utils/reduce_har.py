@@ -53,6 +53,25 @@ SENSITIVE_HEADER_NAMES = {
     "x-xsrf-token",
 }
 
+# Query / JSON / form field names redacted with the same toggle.
+SENSITIVE_FIELD_NAMES = SENSITIVE_HEADER_NAMES | {
+    "password",
+    "passwd",
+    "secret",
+    "token",
+    "access_token",
+    "refresh_token",
+    "id_token",
+    "api_key",
+    "apikey",
+    "client_secret",
+    "private_key",
+    "session_token",
+    "authenticity_token",
+    "csrf_token",
+    "xsrf_token",
+}
+
 BINARY_MIME_PREFIXES = (
     "image/",
     "audio/",
@@ -67,6 +86,10 @@ BINARY_MIME_TYPES = {
     "application/x-gzip",
     "application/wasm",
 }
+
+
+def _is_sensitive_field(name: Any) -> bool:
+    return str(name).lower() in SENSITIVE_FIELD_NAMES
 
 
 def _headers_to_dict(
@@ -90,14 +113,57 @@ def _headers_to_dict(
     return out
 
 
-def _query_to_dict(query: list[dict[str, Any]] | None) -> dict[str, str]:
+def _query_to_dict(
+    query: list[dict[str, Any]] | None,
+    *,
+    redact_secrets: bool,
+) -> dict[str, str]:
     out: dict[str, str] = {}
     for item in query or []:
         name = item.get("name")
         if name is None:
             continue
-        out[str(name)] = str(item.get("value", ""))
+        value = str(item.get("value", ""))
+        if redact_secrets and _is_sensitive_field(name):
+            value = "<redacted>"
+        out[str(name)] = value
     return out
+
+
+def _redact_structured(value: Any, *, redact_secrets: bool) -> Any:
+    if not redact_secrets:
+        return value
+    if isinstance(value, dict):
+        return {
+            key: (
+                "<redacted>"
+                if _is_sensitive_field(key)
+                else _redact_structured(child, redact_secrets=True)
+            )
+            for key, child in value.items()
+        }
+    if isinstance(value, list):
+        return [_redact_structured(item, redact_secrets=True) for item in value]
+    return value
+
+
+def _reduce_params(
+    params: list[dict[str, Any]] | None,
+    *,
+    redact_secrets: bool,
+) -> list[dict[str, Any]] | None:
+    if not params:
+        return None
+    if not redact_secrets:
+        return params
+    reduced: list[dict[str, Any]] = []
+    for item in params:
+        name = item.get("name")
+        value = item.get("value", "")
+        if _is_sensitive_field(name):
+            value = "<redacted>"
+        reduced.append({**item, "value": value})
+    return reduced
 
 
 def _url_without_query(url: str | None) -> str | None:
@@ -153,6 +219,7 @@ def _truncate(value: Any, max_chars: int | None) -> Any:
 def _reduce_post_data(
     post_data: dict[str, Any] | None,
     *,
+    redact_secrets: bool,
     max_body_chars: int | None,
 ) -> dict[str, Any] | None:
     if not post_data:
@@ -160,7 +227,9 @@ def _reduce_post_data(
 
     mime_type = post_data.get("mimeType")
     text = post_data.get("text")
-    params = post_data.get("params")
+    params = _reduce_params(
+        post_data.get("params"), redact_secrets=redact_secrets
+    )
 
     reduced: dict[str, Any] = {}
     if mime_type:
@@ -168,15 +237,18 @@ def _reduce_post_data(
     if params:
         reduced["params"] = params
     if text is not None:
-        reduced["body"] = _truncate(
-            _maybe_parse_json(text, mime_type), max_body_chars
+        body = _redact_structured(
+            _maybe_parse_json(text, mime_type),
+            redact_secrets=redact_secrets,
         )
+        reduced["body"] = _truncate(body, max_body_chars)
     return reduced or None
 
 
 def _reduce_response_content(
     content: dict[str, Any] | None,
     *,
+    redact_secrets: bool,
     max_body_chars: int | None,
 ) -> dict[str, Any] | None:
     if not content:
@@ -206,9 +278,11 @@ def _reduce_response_content(
         reduced["body_omitted"] = "undecodable"
         return reduced
 
-    reduced["body"] = _truncate(
-        _maybe_parse_json(decoded, mime_type), max_body_chars
+    body = _redact_structured(
+        _maybe_parse_json(decoded, mime_type),
+        redact_secrets=redact_secrets,
     )
+    reduced["body"] = _truncate(body, max_body_chars)
     return reduced
 
 
@@ -225,7 +299,9 @@ def reduce_entry(
         "method": request.get("method"),
         "url": _url_without_query(request.get("url")),
     }
-    query = _query_to_dict(request.get("queryString"))
+    query = _query_to_dict(
+        request.get("queryString"), redact_secrets=redact_secrets
+    )
     if query:
         reduced_request["query"] = query
 
@@ -236,7 +312,9 @@ def reduce_entry(
         reduced_request["headers"] = headers
 
     post_data = _reduce_post_data(
-        request.get("postData"), max_body_chars=max_body_chars
+        request.get("postData"),
+        redact_secrets=redact_secrets,
+        max_body_chars=max_body_chars,
     )
     if post_data:
         reduced_request["postData"] = post_data
@@ -255,7 +333,9 @@ def reduce_entry(
         reduced_response["headers"] = resp_headers
 
     content = _reduce_response_content(
-        response.get("content"), max_body_chars=max_body_chars
+        response.get("content"),
+        redact_secrets=redact_secrets,
+        max_body_chars=max_body_chars,
     )
     if content:
         reduced_response["content"] = content
@@ -320,7 +400,10 @@ def main() -> None:
     parser.add_argument(
         "--keep-secrets",
         action="store_true",
-        help="Do not redact Authorization / API-key style headers",
+        help=(
+            "Do not redact sensitive headers, query params, or "
+            "JSON/form field names"
+        ),
     )
     parser.add_argument(
         "--max-body-chars",

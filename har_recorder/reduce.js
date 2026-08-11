@@ -1,5 +1,6 @@
 /**
  * 1:1 port of har_utils/reduce_har.py for browser + Node parity tests.
+ * Python is the source of truth — re-run the parity test after either change.
  */
 
 const DROP_HEADER_NAMES = new Set([
@@ -37,6 +38,25 @@ const SENSITIVE_HEADER_NAMES = new Set([
   "x-xsrf-token",
 ]);
 
+const SENSITIVE_FIELD_NAMES = new Set([
+  ...SENSITIVE_HEADER_NAMES,
+  "password",
+  "passwd",
+  "secret",
+  "token",
+  "access_token",
+  "refresh_token",
+  "id_token",
+  "api_key",
+  "apikey",
+  "client_secret",
+  "private_key",
+  "session_token",
+  "authenticity_token",
+  "csrf_token",
+  "xsrf_token",
+]);
+
 const BINARY_MIME_PREFIXES = ["image/", "audio/", "video/", "font/"];
 
 const BINARY_MIME_TYPES = new Set([
@@ -47,6 +67,10 @@ const BINARY_MIME_TYPES = new Set([
   "application/x-gzip",
   "application/wasm",
 ]);
+
+function isSensitiveField(name) {
+  return SENSITIVE_FIELD_NAMES.has(String(name).toLowerCase());
+}
 
 function headersToDict(headers, { redactSecrets }) {
   const out = {};
@@ -64,14 +88,46 @@ function headersToDict(headers, { redactSecrets }) {
   return out;
 }
 
-function queryToDict(query) {
+function queryToDict(query, { redactSecrets }) {
   const out = {};
   for (const item of query || []) {
     const name = item?.name;
     if (name == null) continue;
-    out[String(name)] = String(item.value ?? "");
+    let value = String(item.value ?? "");
+    if (redactSecrets && isSensitiveField(name)) {
+      value = "<redacted>";
+    }
+    out[String(name)] = value;
   }
   return out;
+}
+
+function redactStructured(value, { redactSecrets }) {
+  if (!redactSecrets) return value;
+  if (Array.isArray(value)) {
+    return value.map((item) => redactStructured(item, { redactSecrets: true }));
+  }
+  if (value && typeof value === "object") {
+    const out = {};
+    for (const [key, child] of Object.entries(value)) {
+      out[key] = isSensitiveField(key)
+        ? "<redacted>"
+        : redactStructured(child, { redactSecrets: true });
+    }
+    return out;
+  }
+  return value;
+}
+
+function reduceParams(params, { redactSecrets }) {
+  if (!params) return null;
+  if (!redactSecrets) return params;
+  return params.map((item) => {
+    const name = item?.name;
+    let value = item?.value ?? "";
+    if (isSensitiveField(name)) value = "<redacted>";
+    return { ...item, value };
+  });
 }
 
 function urlWithoutQuery(url) {
@@ -114,7 +170,8 @@ function decodeBodyText(text, encoding) {
 function maybeParseJson(text, mimeType) {
   if (text == null) return null;
   const mime = (mimeType || "").toLowerCase();
-  const looksJson = mime.includes("json") || text.startsWith("{") || text.startsWith("[");
+  const looksJson =
+    mime.includes("json") || text.startsWith("{") || text.startsWith("[");
   if (!looksJson) return text;
   try {
     return JSON.parse(text);
@@ -129,23 +186,26 @@ function truncate(value, maxChars) {
   return `${value.slice(0, maxChars)}…<truncated ${value.length - maxChars} chars>`;
 }
 
-function reducePostData(postData, { maxBodyChars }) {
+function reducePostData(postData, { redactSecrets, maxBodyChars }) {
   if (!postData) return null;
 
   const mimeType = postData.mimeType;
   const text = postData.text;
-  const params = postData.params;
+  const params = reduceParams(postData.params, { redactSecrets });
 
   const reduced = {};
   if (mimeType) reduced.mimeType = mimeType;
   if (params) reduced.params = params;
   if (text != null) {
-    reduced.body = truncate(maybeParseJson(text, mimeType), maxBodyChars);
+    const body = redactStructured(maybeParseJson(text, mimeType), {
+      redactSecrets,
+    });
+    reduced.body = truncate(body, maxBodyChars);
   }
   return Object.keys(reduced).length ? reduced : null;
 }
 
-function reduceResponseContent(content, { maxBodyChars }) {
+function reduceResponseContent(content, { redactSecrets, maxBodyChars }) {
   if (!content) return null;
 
   const mimeType = content.mimeType;
@@ -170,11 +230,17 @@ function reduceResponseContent(content, { maxBodyChars }) {
     return reduced;
   }
 
-  reduced.body = truncate(maybeParseJson(decoded, mimeType), maxBodyChars);
+  const body = redactStructured(maybeParseJson(decoded, mimeType), {
+    redactSecrets,
+  });
+  reduced.body = truncate(body, maxBodyChars);
   return reduced;
 }
 
-export function reduceEntry(entry, { redactSecrets = true, maxBodyChars = 20_000 } = {}) {
+export function reduceEntry(
+  entry,
+  { redactSecrets = true, maxBodyChars = 20_000 } = {},
+) {
   const request = entry.request || {};
   const response = entry.response || {};
 
@@ -182,13 +248,16 @@ export function reduceEntry(entry, { redactSecrets = true, maxBodyChars = 20_000
     method: request.method,
     url: urlWithoutQuery(request.url),
   };
-  const query = queryToDict(request.queryString);
+  const query = queryToDict(request.queryString, { redactSecrets });
   if (Object.keys(query).length) reducedRequest.query = query;
 
   const headers = headersToDict(request.headers, { redactSecrets });
   if (Object.keys(headers).length) reducedRequest.headers = headers;
 
-  const postData = reducePostData(request.postData, { maxBodyChars });
+  const postData = reducePostData(request.postData, {
+    redactSecrets,
+    maxBodyChars,
+  });
   if (postData) reducedRequest.postData = postData;
 
   const reducedResponse = {
@@ -199,7 +268,10 @@ export function reduceEntry(entry, { redactSecrets = true, maxBodyChars = 20_000
   const respHeaders = headersToDict(response.headers, { redactSecrets });
   if (Object.keys(respHeaders).length) reducedResponse.headers = respHeaders;
 
-  const content = reduceResponseContent(response.content, { maxBodyChars });
+  const content = reduceResponseContent(response.content, {
+    redactSecrets,
+    maxBodyChars,
+  });
   if (content) reducedResponse.content = content;
 
   return {

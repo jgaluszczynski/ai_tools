@@ -10,6 +10,7 @@ const state = {
   listener: null,
   durationTimer: null,
   statsTimer: null,
+  sessionId: 0,
 };
 
 function parseFilterTokens(raw) {
@@ -60,7 +61,8 @@ function filterEntries(entries) {
   const domain = $("domainFilter").value;
   const urlFilter = $("urlFilter").value;
   return entries.filter(
-    (entry) => matchesDomain(entry, domain) && matchesUrlFilters(entry, urlFilter),
+    (entry) =>
+      matchesDomain(entry, domain) && matchesUrlFilters(entry, urlFilter),
   );
 }
 
@@ -82,16 +84,22 @@ function formatBytes(bytes) {
 
 function getReduceOptions() {
   const maxRaw = Number($("maxBodyChars").value);
+  const maxBodyChars =
+    !Number.isFinite(maxRaw) || maxRaw < 0
+      ? 20_000
+      : maxRaw === 0
+        ? null
+        : Math.floor(maxRaw);
   return {
     redactSecrets: $("redactSecrets").checked,
-    maxBodyChars: maxRaw === 0 ? null : maxRaw,
+    maxBodyChars,
   };
 }
 
-function buildReducedExport(filteredEntries) {
+function buildReducedExport(filteredEntries, source = "session.har") {
   const har = { log: { entries: filteredEntries } };
   return reduceHarFromObject(har, {
-    source: exportBasename(),
+    source,
     ...getReduceOptions(),
   });
 }
@@ -183,7 +191,9 @@ function onRequestFinished(request) {
   const startedMs = new Date(request.startedDateTime).getTime();
   if (!isWithinSessionWindow(startedMs)) return;
 
+  const sessionId = state.sessionId;
   request.getContent((content, encoding) => {
+    if (sessionId !== state.sessionId) return;
     state.entries.push(buildHarEntry(request, content, encoding));
     render();
   });
@@ -195,12 +205,12 @@ function setStatus(text, className) {
   el.className = `status${className ? ` status--${className}` : ""}`;
 }
 
-function updateButtons() {
+function updateButtons(filtered) {
   $("btnStart").disabled = state.recording;
   $("btnStop").disabled = !state.recording;
-  const hasEntries = state.entries.length > 0;
-  $("btnDownloadReduced").disabled = !hasEntries;
-  $("btnDownloadRaw").disabled = !hasEntries;
+  const hasFiltered = filtered.length > 0;
+  $("btnDownloadReduced").disabled = !hasFiltered;
+  $("btnDownloadRaw").disabled = !hasFiltered;
 }
 
 function currentDurationMs() {
@@ -209,22 +219,30 @@ function currentDurationMs() {
   return end - state.startTime;
 }
 
-function updateStats() {
-  const filtered = filterEntries(state.entries);
-  $("statEntries").textContent = `${filtered.length} / ${state.entries.length}`;
+function updateCountsAndDuration(filtered) {
+  $("statEntries").textContent =
+    `${filtered.length} / ${state.entries.length}`;
   $("statDuration").textContent = formatDuration(currentDurationMs());
+}
 
+function updateExportSize() {
+  const filtered = filterEntries(state.entries);
   if (!filtered.length) {
     $("statSize").textContent = "—";
     return;
   }
 
   try {
-    const reduced = buildReducedExport(filtered);
+    const reduced = buildReducedExport(filtered, "session.har");
     $("statSize").textContent = formatBytes(JSON.stringify(reduced).length);
   } catch {
     $("statSize").textContent = "—";
   }
+}
+
+function scheduleExportSizeRefresh() {
+  clearTimeout(state.statsTimer);
+  state.statsTimer = setTimeout(updateExportSize, 200);
 }
 
 function renderEntryList(filtered) {
@@ -233,47 +251,58 @@ function renderEntryList(filtered) {
   for (const entry of filtered) {
     const li = document.createElement("li");
     li.className = "entry-item";
-    const method = entry.request?.method || "?";
-    const url = entry.request?.url || "";
+
+    const methodEl = document.createElement("span");
+    methodEl.className = "entry-method";
+    methodEl.textContent = entry.request?.method || "?";
+
     const status = entry.response?.status;
-    const statusClass =
-      status != null && status >= 400 ? "entry-status entry-status--error" : "entry-status";
-    li.innerHTML = `<span class="entry-method">${escapeHtml(method)}</span> ` +
-      `<span class="${statusClass}">${status ?? "?"}</span> ` +
-      `<span>${escapeHtml(url)}</span>`;
+    const statusEl = document.createElement("span");
+    statusEl.className =
+      status != null && status >= 400
+        ? "entry-status entry-status--error"
+        : "entry-status";
+    statusEl.textContent = status != null ? String(status) : "?";
+
+    const urlEl = document.createElement("span");
+    urlEl.textContent = entry.request?.url || "";
+
+    li.append(
+      methodEl,
+      document.createTextNode(" "),
+      statusEl,
+      document.createTextNode(" "),
+      urlEl,
+    );
     list.appendChild(li);
   }
   $("emptyHint").hidden = filtered.length > 0;
 }
 
-function escapeHtml(value) {
-  return String(value)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
-
 function render() {
   const filtered = filterEntries(state.entries);
   renderEntryList(filtered);
-  updateStats();
-  updateButtons();
-}
-
-function scheduleStatsRefresh() {
-  clearTimeout(state.statsTimer);
-  state.statsTimer = setTimeout(updateStats, 200);
+  updateCountsAndDuration(filtered);
+  updateButtons(filtered);
+  scheduleExportSizeRefresh();
 }
 
 function startDurationTimer() {
   clearInterval(state.durationTimer);
   state.durationTimer = setInterval(() => {
-    if (state.recording) updateStats();
+    if (state.recording) {
+      updateCountsAndDuration(filterEntries(state.entries));
+    }
   }, 1000);
 }
 
+function resetBuffer() {
+  state.sessionId += 1;
+  state.entries = [];
+}
+
 function startRecording() {
+  resetBuffer();
   state.recording = true;
   state.startTime = Date.now();
   state.stopTime = null;
@@ -281,7 +310,6 @@ function startRecording() {
   chrome.devtools.network.onRequestFinished.addListener(state.listener);
   setStatus("Recording XHR/fetch…", "recording");
   startDurationTimer();
-  updateButtons();
   render();
 }
 
@@ -295,13 +323,12 @@ function stopRecording() {
   }
   clearInterval(state.durationTimer);
   setStatus("Stopped", "stopped");
-  updateButtons();
   render();
 }
 
 function clearSession() {
   if (state.recording) stopRecording();
-  state.entries = [];
+  resetBuffer();
   state.startTime = null;
   state.stopTime = null;
   setStatus("Idle");
@@ -320,30 +347,50 @@ function copyDevToolsFilter() {
   );
 }
 
+function downloadReduced() {
+  const filtered = filterEntries(state.entries);
+  if (!filtered.length) return;
+  if (
+    !$("redactSecrets").checked &&
+    !window.confirm(
+      "Redact secrets is off. Export may contain credentials. Continue?",
+    )
+  ) {
+    return;
+  }
+  const basename = exportBasename();
+  const data = buildReducedExport(filtered, `${basename}.har`);
+  downloadJson(`${basename}_reduced.json`, data);
+}
+
+function downloadRaw() {
+  const filtered = filterEntries(state.entries);
+  if (!filtered.length) return;
+  if (
+    !window.confirm(
+      "Raw HAR includes cookies, auth headers, and full bodies. Continue?",
+    )
+  ) {
+    return;
+  }
+  downloadJson(`${exportBasename()}.har`, buildRawHar(filtered));
+}
+
 function init() {
   $("btnStart").addEventListener("click", startRecording);
   $("btnStop").addEventListener("click", stopRecording);
   $("btnClear").addEventListener("click", clearSession);
   $("btnCopyFilter").addEventListener("click", copyDevToolsFilter);
-  $("btnDownloadReduced").addEventListener("click", () => {
-    const filtered = filterEntries(state.entries);
-    const data = buildReducedExport(filtered);
-    downloadJson(`${exportBasename()}_reduced.json`, data);
-  });
-  $("btnDownloadRaw").addEventListener("click", () => {
-    const filtered = filterEntries(state.entries);
-    downloadJson(`${exportBasename()}.har`, buildRawHar(filtered));
-  });
+  $("btnDownloadReduced").addEventListener("click", downloadReduced);
+  $("btnDownloadRaw").addEventListener("click", downloadRaw);
 
-  for (const id of ["domainFilter", "urlFilter", "redactSecrets", "maxBodyChars"]) {
-    $(id).addEventListener("input", () => {
-      render();
-      scheduleStatsRefresh();
-    });
-    $(id).addEventListener("change", () => {
-      render();
-      scheduleStatsRefresh();
-    });
+  for (const id of [
+    "domainFilter",
+    "urlFilter",
+    "redactSecrets",
+    "maxBodyChars",
+  ]) {
+    $(id).addEventListener("input", render);
   }
 
   render();

@@ -49,7 +49,7 @@
   <section class="options">
     <label class="checkbox">
       <input type="checkbox" id="redactSecrets" checked />
-      Redact secrets
+      Redact secrets (headers, query, JSON/form fields)
     </label>
     <label class="field field--inline">
       <span class="field-label">Max body chars</span>
@@ -68,10 +68,19 @@
       <button type="button" id="btnDownloadReduced" class="btn btn--primary" disabled>
         Download reduced JSON
       </button>
-      <button type="button" id="btnDownloadRaw" class="btn" disabled>
+      <button
+        type="button"
+        id="btnDownloadRaw"
+        class="btn"
+        disabled
+        title="Includes cookies, auth headers, and full bodies."
+      >
         Download raw HAR
       </button>
     </div>
+    <p class="hint warn">
+      Raw HAR is unredacted (cookies, auth headers, full bodies). Prefer reduced JSON for sharing.
+    </p>
   </section>
 
   <section class="entries">
