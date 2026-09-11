@@ -7,6 +7,7 @@ lint/all: check-all
 
 test:
 	node har_recorder/test/parity_test.mjs
+	poetry run pytest coding_model_preflight/tests
 
 # Run linting tools
 lint:
