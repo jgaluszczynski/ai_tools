@@ -1,6 +1,7 @@
 {
   "fallback_model": "claude-opus-5-thinking-high",
   "near_tie_margin": 2.0,
+  "cost_quality_margin": 5.0,
   "soft_ttl_hours": 12,
   "hard_ttl_hours": 72,
   "timeout_seconds": 10,

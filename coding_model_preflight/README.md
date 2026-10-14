@@ -1,6 +1,30 @@
 # Coding Model Preflight
 
-Recommend a Cursor model slug from public coding benchmark data.
+Recommend Cursor model slugs from public benchmark data, split by task.
+
+## Tasks and roles
+
+`select --json` returns `tasks.coding` and `tasks.planning`. Coding ranks on
+Artificial Analysis `coding_index` (equal scores break on aistupidlevel).
+Planning ranks on Artificial Analysis `intelligence_index`. Each task lists up
+to three picks:
+
+| Role | Rule |
+| --- | --- |
+| `strong` | Highest task score. |
+| `similarly_strong` | Next score, within `near_tie_margin` of strong. Labeled `next_best` when the gap is larger. |
+| `cost_efficient` | Cheapest completion price among the remaining models within `cost_quality_margin` of strong and cheaper than strong. Omitted when none qualify. |
+
+`selected_model` stays the coding `strong` slug.
+
+When OpenRouter is unavailable, planning reuses the aistupidlevel order with
+`confidence: low` and a `note`, because that score is coding-heavy. A slug
+with only an aistupidlevel score is excluded from planning while OpenRouter
+data exists.
+
+Unused signals: Artificial Analysis `agentic_index` and aistupidlevel's
+`codeQuality` axis. Neither answers the coding or planning question above, and
+neither predicts pull-request review volume.
 
 ## Setup
 
@@ -54,5 +78,5 @@ typically have no public score and will appear in `exclusions`. That is expected
 
 ## Deferred
 
-LiveCodeBench, SWE-bench, task profiles, capability filters, sessionStart hook,
-scheduled source-schema CI.
+LiveCodeBench, SWE-bench, capability filters, sessionStart hook, scheduled
+source-schema CI.

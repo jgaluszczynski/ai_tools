@@ -16,11 +16,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 OPENROUTER_URL = (
     "https://openrouter.ai/api/v1/benchmarks"
-    "?source=artificial-analysis&task_type=coding"
+    "?source=artificial-analysis&max_results=100"
 )
+TASKS = ("coding", "planning")
 AISTUPIDLEVEL_URL = (
     "https://aistupidlevel.info/dashboard/cached"
     "?period=latest&sortBy=combined&analyticsPeriod=latest"
@@ -47,9 +48,10 @@ class Record:
     source: str
     external_id: str
     display_name: str
-    coding_score: float
+    coding_score: float | None
     output_price_per_million: float | None = None
     source_updated_at: str | None = None
+    intelligence_score: float | None = None
 
 
 @dataclass
@@ -59,6 +61,13 @@ class Candidate:
     aistupidlevel_score: int | None
     output_price_per_million: float | None
     sources: list[str] = field(default_factory=list)
+    intelligence_index: float | None = None
+    coding_from_openrouter: bool = False
+
+    def score_for(self, task: str) -> float | None:
+        if task == "planning":
+            return self.intelligence_index
+        return self.coding_index
 
 
 @dataclass
@@ -66,7 +75,7 @@ class Recommendation:
     selected_model: str
     confidence: str
     selected: Candidate | None
-    alternatives: list[dict[str, Any]]
+    tasks: dict[str, dict[str, Any]]
     cache: dict[str, Any]
     sources: dict[str, Any]
     exclusions: list[dict[str, str]]
@@ -127,6 +136,7 @@ def load_config(path: Path) -> dict[str, Any]:
     required = [
         "fallback_model",
         "near_tie_margin",
+        "cost_quality_margin",
         "soft_ttl_hours",
         "hard_ttl_hours",
         "timeout_seconds",
@@ -238,11 +248,16 @@ def fetch_openrouter(
         permaslug = item.get("model_permaslug")
         display_name = item.get("display_name")
         coding_index = item.get("coding_index")
+        intelligence_index = item.get("intelligence_index")
         if not isinstance(permaslug, str) or not permaslug:
             continue
         if not isinstance(display_name, str):
             display_name = permaslug
         if not isinstance(coding_index, (int, float)):
+            coding_index = None
+        if not isinstance(intelligence_index, (int, float)):
+            intelligence_index = None
+        if coding_index is None and intelligence_index is None:
             continue
 
         output_price = None
@@ -260,9 +275,16 @@ def fetch_openrouter(
                 source="openrouter_artificial_analysis",
                 external_id=permaslug,
                 display_name=display_name,
-                coding_score=float(coding_index),
+                coding_score=(
+                    float(coding_index) if coding_index is not None else None
+                ),
                 output_price_per_million=output_price,
                 source_updated_at=as_of,
+                intelligence_score=(
+                    float(intelligence_index)
+                    if intelligence_index is not None
+                    else None
+                ),
             )
         )
 
@@ -340,13 +362,22 @@ def records_from_json(items: list[Any]) -> list[Record]:
                     source=str(item["source"]),
                     external_id=str(item["external_id"]),
                     display_name=str(item["display_name"]),
-                    coding_score=float(item["coding_score"]),
+                    coding_score=(
+                        float(item["coding_score"])
+                        if item.get("coding_score") is not None
+                        else None
+                    ),
                     output_price_per_million=(
                         float(item["output_price_per_million"])
                         if item.get("output_price_per_million") is not None
                         else None
                     ),
                     source_updated_at=item.get("source_updated_at"),
+                    intelligence_score=(
+                        float(item["intelligence_score"])
+                        if item.get("intelligence_score") is not None
+                        else None
+                    ),
                 )
             )
         except (KeyError, TypeError, ValueError):
@@ -528,7 +559,12 @@ def build_candidates(
         asl_match = match_aistupidlevel(model_cfg, asl_index)
 
         coding_index = or_match.coding_score if or_match else None
-        asl_score = int(asl_match.coding_score) if asl_match else None
+        intelligence_index = or_match.intelligence_score if or_match else None
+        asl_score = (
+            int(asl_match.coding_score)
+            if asl_match and asl_match.coding_score is not None
+            else None
+        )
         output_price = or_match.output_price_per_million if or_match else None
         source_names: list[str] = []
 
@@ -537,11 +573,17 @@ def build_candidates(
         if asl_match:
             source_names.append("aistupidlevel")
 
-        if coding_index is None and asl_match:
+        coding_from_openrouter = (
+            or_match is not None and or_match.coding_score is not None
+        )
+        if (
+            coding_index is None
+            and asl_match is not None
+            and asl_match.coding_score is not None
+        ):
             coding_index = float(asl_match.coding_score)
-            source_names = ["aistupidlevel"]
 
-        if coding_index is None:
+        if coding_index is None and intelligence_index is None:
             exclusions.append(
                 {"slug": slug, "reason": "no external coding score"}
             )
@@ -554,6 +596,8 @@ def build_candidates(
                 aistupidlevel_score=asl_score,
                 output_price_per_million=output_price,
                 sources=source_names,
+                intelligence_index=intelligence_index,
+                coding_from_openrouter=coding_from_openrouter,
             )
         )
 
@@ -561,34 +605,86 @@ def build_candidates(
 
 
 def rank_candidates(
-    candidates: list[Candidate], near_tie_margin: float
+    candidates: list[Candidate],
+    task: str = "coding",
 ) -> list[Candidate]:
-    if not candidates:
+    eligible = [c for c in candidates if c.score_for(task) is not None]
+    if not eligible:
         return []
 
-    by_score = sorted(
-        candidates,
+    return sorted(
+        eligible,
         key=lambda c: (
-            -c.coding_index if c.coding_index is not None else 0.0,
+            -(c.score_for(task) or 0.0),
+            -(c.aistupidlevel_score or -1) if task == "coding" else 0,
             c.slug,
         ),
     )
-    top_score = by_score[0].coding_index or 0.0
-    near_top = [
+
+
+def pick_entry(
+    candidate: Candidate, task: str, role: str, reason: str
+) -> dict[str, Any]:
+    return {
+        "role": role,
+        "slug": candidate.slug,
+        "score": candidate.score_for(task),
+        "output_price_per_million": candidate.output_price_per_million,
+        "reason": reason,
+    }
+
+
+def build_picks(
+    ranked: list[Candidate],
+    task: str,
+    near_tie_margin: float,
+    cost_quality_margin: float,
+) -> list[dict[str, Any]]:
+    if not ranked:
+        return []
+
+    strong = ranked[0]
+    top_score = strong.score_for(task) or 0.0
+    picks = [pick_entry(strong, task, "strong", f"highest {task} score")]
+
+    if len(ranked) > 1:
+        second = ranked[1]
+        diff = top_score - (second.score_for(task) or 0.0)
+        role = "similarly_strong" if diff <= near_tie_margin else "next_best"
+        picks.append(
+            pick_entry(second, task, role, f"{diff:.1f} points below strong")
+        )
+
+    strong_price = strong.output_price_per_million
+    pool = [
         c
-        for c in by_score
-        if top_score - (c.coding_index or 0.0) <= near_tie_margin
+        for c in ranked[2:]
+        if top_score - (c.score_for(task) or 0.0) <= cost_quality_margin
+        and c.output_price_per_million is not None
+        and strong_price is not None
+        and c.output_price_per_million < strong_price
     ]
-    near_top_sorted = sorted(
-        near_top,
-        key=lambda c: (
-            -(c.aistupidlevel_score or -1),
-            -(c.coding_index or 0.0),
-            c.slug,
-        ),
-    )
-    rest = [c for c in by_score if c not in near_top_sorted]
-    return near_top_sorted + rest
+    if pool:
+        cheapest = min(
+            pool,
+            key=lambda c: (
+                c.output_price_per_million,
+                -(c.score_for(task) or 0.0),
+                c.slug,
+            ),
+        )
+        diff = top_score - (cheapest.score_for(task) or 0.0)
+        picks.append(
+            pick_entry(
+                cheapest,
+                task,
+                "cost_efficient",
+                f"{diff:.1f} points below strong at "
+                f"${cheapest.output_price_per_million:.2f}/M output "
+                f"vs ${strong_price:.2f}/M",
+            )
+        )
+    return picks
 
 
 def confidence_for(
@@ -597,6 +693,8 @@ def confidence_for(
     selected: Candidate | None,
     has_primary_source: bool,
     used_fallback: bool,
+    *,
+    score_from_openrouter: bool,
 ) -> tuple[str, bool]:
     age = cache_age_hours(snapshot)
     soft = float(config["soft_ttl_hours"])
@@ -612,13 +710,7 @@ def confidence_for(
     if age > hard:
         return "low", True
 
-    if (
-        not has_primary_source
-        or (
-            "aistupidlevel" in selected.sources
-            and "openrouter_artificial_analysis" not in selected.sources
-        )
-    ):
+    if not has_primary_source or not score_from_openrouter:
         return "medium", used_stale
 
     if used_stale:
@@ -627,27 +719,16 @@ def confidence_for(
     return "high", False
 
 
-def alternative_reason(top: Candidate, alt: Candidate, margin: float) -> str:
-    diff = (top.coding_index or 0.0) - (alt.coding_index or 0.0)
-    parts = [f"within {margin:.1f} of top"]
-    if (
-        alt.aistupidlevel_score is not None
-        and top.aistupidlevel_score is not None
-        and alt.aistupidlevel_score < top.aistupidlevel_score
-    ):
-        parts.append("lower aistupidlevel score")
-    elif diff > 0:
-        parts.append(f"{diff:.1f} coding_index points lower")
-    return "; ".join(parts)
-
-
 def recommend(
     config: dict[str, Any], snapshot: dict[str, Any]
 ) -> Recommendation:
     candidates, exclusions, has_primary_source = build_candidates(
         config, snapshot
     )
-    ranked = rank_candidates(candidates, float(config["near_tie_margin"]))
+    near_tie = float(config["near_tie_margin"])
+    cost_margin = float(config["cost_quality_margin"])
+
+    ranked = rank_candidates(candidates, "coding")
     used_fallback = False
     selected: Candidate | None = ranked[0] if ranked else None
 
@@ -667,25 +748,49 @@ def recommend(
         selected if not used_fallback else None,
         has_primary_source,
         used_fallback,
+        score_from_openrouter=bool(
+            selected and selected.coding_from_openrouter and not used_fallback
+        ),
     )
 
-    margin = float(config["near_tie_margin"])
-    alternatives: list[dict[str, Any]] = []
-    if ranked and not used_fallback:
-        top = ranked[0]
-        top_score = top.coding_index or 0.0
-        for alt in ranked[1:]:
-            if top_score - (alt.coding_index or 0.0) > margin:
-                break
-            alternatives.append(
-                {
-                    "slug": alt.slug,
-                    "coding_index": alt.coding_index,
-                    "reason": alternative_reason(top, alt, margin),
-                }
-            )
-            if len(alternatives) >= 2:
-                break
+    tasks: dict[str, dict[str, Any]] = {
+        "coding": {
+            "confidence": confidence,
+            "picks": build_picks(ranked, "coding", near_tie, cost_margin),
+        }
+    }
+
+    planning_ranked = rank_candidates(candidates, "planning")
+    planning_entry: dict[str, Any]
+    if planning_ranked:
+        planning_confidence, _ = confidence_for(
+            snapshot,
+            config,
+            planning_ranked[0],
+            has_primary_source,
+            False,
+            score_from_openrouter=(
+                planning_ranked[0].intelligence_index is not None
+            ),
+        )
+        planning_entry = {
+            "confidence": planning_confidence,
+            "picks": build_picks(
+                planning_ranked, "planning", near_tie, cost_margin
+            ),
+        }
+    elif ranked and not has_primary_source:
+        planning_entry = {
+            "confidence": "low",
+            "note": (
+                "no intelligence_index available; reusing aistupidlevel "
+                "order, which is coding-heavy"
+            ),
+            "picks": build_picks(ranked, "coding", near_tie, cost_margin),
+        }
+    else:
+        planning_entry = {"confidence": "low", "picks": []}
+    tasks["planning"] = planning_entry
 
     sources_meta: dict[str, Any] = {}
     for name in ("openrouter", "aistupidlevel"):
@@ -703,7 +808,7 @@ def recommend(
         selected_model=selected.slug,
         confidence=confidence,
         selected=selected,
-        alternatives=alternatives,
+        tasks=tasks,
         cache={
             "generated_at": snapshot.get("generated_at"),
             "age_hours": round(cache_age_hours(snapshot), 1),
@@ -721,6 +826,7 @@ def recommendation_to_json(rec: Recommendation) -> dict[str, Any]:
         selected = {
             "slug": rec.selected.slug,
             "coding_index": rec.selected.coding_index,
+            "intelligence_index": rec.selected.intelligence_index,
             "aistupidlevel_score": rec.selected.aistupidlevel_score,
             "output_price_per_million": rec.selected.output_price_per_million,
             "sources": rec.selected.sources,
@@ -729,7 +835,7 @@ def recommendation_to_json(rec: Recommendation) -> dict[str, Any]:
         "selected_model": rec.selected_model,
         "confidence": rec.confidence,
         "selected": selected,
-        "alternatives": rec.alternatives,
+        "tasks": rec.tasks,
         "cache": rec.cache,
         "sources": rec.sources,
         "exclusions": rec.exclusions,
@@ -764,8 +870,15 @@ def format_human(rec: Recommendation) -> str:
     elif or_status == "not_configured":
         lines.append("Primary source: not configured (OPENROUTER_API_KEY).")
 
-    for alt in rec.alternatives[:1]:
-        lines.append(f"Alternative: {alt['slug']} — {alt['reason']}.")
+    for task in TASKS:
+        entry = rec.tasks.get(task, {})
+        lines.append(f"{task.capitalize()} ({entry.get('confidence')}):")
+        if entry.get("note"):
+            lines.append(f"  note: {entry['note']}")
+        for pick in entry.get("picks", []):
+            lines.append(
+                f"  {pick['role']}: {pick['slug']} — {pick['reason']}."
+            )
 
     for exc in rec.exclusions[:2]:
         lines.append(f"Excluded: {exc['slug']} — {exc['reason']}.")

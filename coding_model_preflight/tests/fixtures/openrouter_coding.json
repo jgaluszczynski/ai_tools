@@ -5,6 +5,8 @@
       "model_permaslug": "anthropic/claude-opus-5",
       "display_name": "Claude Opus 5",
       "coding_index": 69.4,
+      "intelligence_index": 70.0,
+      "agentic_index": 66.0,
       "pricing": {
         "prompt": "0.000015",
         "completion": "0.000075"
@@ -15,6 +17,8 @@
       "model_permaslug": "openai/gpt-5.6-sol",
       "display_name": "GPT-5.6 Sol",
       "coding_index": 67.9,
+      "intelligence_index": 73.0,
+      "agentic_index": 64.0,
       "pricing": {
         "prompt": "0.000010",
         "completion": "0.000040"
@@ -25,6 +29,8 @@
       "model_permaslug": "openai/gpt-5.5",
       "display_name": "GPT-5.5",
       "coding_index": 68.5,
+      "intelligence_index": 71.0,
+      "agentic_index": 63.0,
       "pricing": {
         "prompt": "0.000012",
         "completion": "0.000050"
@@ -35,6 +41,8 @@
       "model_permaslug": "anthropic/claude-sonnet-4.6",
       "display_name": "Claude Sonnet 4.6",
       "coding_index": 66.2,
+      "intelligence_index": 65.0,
+      "agentic_index": null,
       "pricing": null
     }
   ],
@@ -42,6 +50,6 @@
     "as_of": "2026-09-11T09:00:00.000Z",
     "version": "v1",
     "source": "artificial-analysis",
-    "task_type": "coding"
+    "task_type": null
   }
 }
