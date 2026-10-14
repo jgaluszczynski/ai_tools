@@ -30,9 +30,9 @@ python3 scripts/preflight.py select --json
    - `strong`: highest task score.
    - `similarly_strong`: next score, inside the near-tie margin. When the
      gap is larger the role is `next_best` instead.
-   - `cost_efficient`: cheapest output price among models within
-     `cost_quality_margin` points of strong and cheaper than strong. Absent
-     when nobody qualifies.
+   - `cost_efficient`: cheapest output price among the remaining models
+     (after `strong` and the second pick) within `cost_quality_margin`
+     points of strong and cheaper than strong. Absent when nobody qualifies.
 3. Cross-check slugs against the models available in this session. Skip any
    pick that is unavailable and move to the next role.
 4. Report one line per pick plus task confidence, snapshot age, and primary
