@@ -63,6 +63,7 @@ def test_load_config_duplicate_slug(tmp_path):
             {
                 "fallback_model": "a",
                 "near_tie_margin": 2.0,
+                "cost_quality_margin": 5.0,
                 "soft_ttl_hours": 12,
                 "hard_ttl_hours": 72,
                 "timeout_seconds": 10,
@@ -87,6 +88,7 @@ def test_fetch_openrouter_parses_fixture(openrouter_payload, monkeypatch):
     assert len(records) == 4
     assert records[0].external_id == "anthropic/claude-opus-5"
     assert records[0].coding_score == 69.4
+    assert records[0].intelligence_score == 70.0
     assert records[0].output_price_per_million == pytest.approx(75.0)
     assert as_of == "2026-09-11T09:00:00.000Z"
 
@@ -97,9 +99,7 @@ def test_fetch_openrouter_not_configured():
     assert exc.value.kind == "not_configured"
 
 
-def test_fetch_aistupidlevel_parses_fixture(
-    aistupidlevel_payload, monkeypatch
-):
+def test_fetch_aistupidlevel_parses_fixture(aistupidlevel_payload, monkeypatch):
     def fake_get(url, timeout, max_bytes, headers=None):
         return json.dumps(aistupidlevel_payload).encode()
 
@@ -111,7 +111,7 @@ def test_fetch_aistupidlevel_parses_fixture(
 
 def test_exact_mapping_and_exclusion(config):
     snapshot = {
-        "schema_version": 1,
+        "schema_version": preflight.SCHEMA_VERSION,
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "sources": {
             "openrouter": {
@@ -139,22 +139,35 @@ def test_exact_mapping_and_exclusion(config):
     assert any(e["slug"] == "composer-2.5-fast" for e in exclusions)
 
 
-def test_ranking_and_near_tie_tiebreak():
+def test_ranking_prefers_higher_score_and_asl_breaks_exact_ties():
     candidates = [
         preflight.Candidate("b-model", 68.0, 70, None, ["openrouter"]),
         preflight.Candidate("a-model", 68.5, 65, None, ["openrouter"]),
         preflight.Candidate("c-model", 60.0, 80, None, ["openrouter"]),
+        preflight.Candidate("tie-low-asl", 68.0, 10, None, ["openrouter"]),
     ]
-    ranked = preflight.rank_candidates(candidates, near_tie_margin=2.0)
-    assert ranked[0].slug == "b-model"
-    assert ranked[1].slug == "a-model"
-    assert ranked[2].slug == "c-model"
+    ranked = preflight.rank_candidates(candidates, "coding")
+    assert [c.slug for c in ranked] == [
+        "a-model",
+        "b-model",
+        "tie-low-asl",
+        "c-model",
+    ]
+
+    picks = preflight.build_picks(
+        ranked, "coding", near_tie_margin=2.0, cost_quality_margin=5.0
+    )
+    assert picks[0]["slug"] == "a-model"
+    assert picks[0]["reason"] == "highest coding score"
+    assert picks[1]["slug"] == "b-model"
+    assert picks[1]["role"] == "similarly_strong"
+    assert picks[1]["reason"] == "0.5 points below strong"
 
 
 def test_fallback_source_only_medium_confidence(config, tmp_cache):
     now = datetime.now(timezone.utc)
     snapshot = {
-        "schema_version": 1,
+        "schema_version": preflight.SCHEMA_VERSION,
         "generated_at": now.isoformat(),
         "sources": {
             "openrouter": {"status": "not_configured", "records": []},
@@ -176,11 +189,15 @@ def test_fallback_source_only_medium_confidence(config, tmp_cache):
     rec = preflight.recommend(config, snapshot)
     assert rec.selected_model == "claude-opus-5-thinking-high"
     assert rec.confidence == "medium"
+    planning = rec.tasks["planning"]
+    assert planning["confidence"] == "low"
+    assert "coding-heavy" in planning["note"]
+    assert planning["picks"][0]["slug"] == "claude-opus-5-thinking-high"
 
 
 def test_no_data_uses_fallback(config, tmp_cache):
     snapshot = {
-        "schema_version": 1,
+        "schema_version": preflight.SCHEMA_VERSION,
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "sources": {
             "openrouter": {"status": "not_configured", "records": []},
@@ -191,12 +208,14 @@ def test_no_data_uses_fallback(config, tmp_cache):
     assert rec.selected_model == config["fallback_model"]
     assert rec.confidence == "low"
     assert rec.used_fallback is True
+    assert rec.tasks["coding"]["picks"] == []
+    assert rec.tasks["planning"]["picks"] == []
 
 
 def test_fresh_cache_skips_refresh(config, tmp_cache, monkeypatch):
     now = datetime.now(timezone.utc).isoformat()
     snapshot = {
-        "schema_version": 1,
+        "schema_version": preflight.SCHEMA_VERSION,
         "generated_at": now,
         "sources": {
             "openrouter": {"status": "ok", "records": []},
@@ -219,7 +238,7 @@ def test_fresh_cache_skips_refresh(config, tmp_cache, monkeypatch):
 def test_stale_cache_triggers_refresh(config, tmp_cache, monkeypatch):
     old = (datetime.now(timezone.utc) - timedelta(hours=20)).isoformat()
     snapshot = {
-        "schema_version": 1,
+        "schema_version": preflight.SCHEMA_VERSION,
         "generated_at": old,
         "sources": {
             "openrouter": {"status": "ok", "records": []},
@@ -255,7 +274,7 @@ def test_refresh_keeps_prior_records_on_source_failure(
         ]
     )
     snapshot = {
-        "schema_version": 1,
+        "schema_version": preflight.SCHEMA_VERSION,
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "sources": {
             "openrouter": {"status": "ok", "records": prior},
@@ -305,7 +324,7 @@ def test_failed_refresh_preserves_freshness_and_confidence(
         ]
     )
     snapshot = {
-        "schema_version": 1,
+        "schema_version": preflight.SCHEMA_VERSION,
         "generated_at": old,
         "sources": {
             "openrouter": {"status": "ok", "records": prior},
@@ -327,7 +346,7 @@ def test_failed_refresh_preserves_freshness_and_confidence(
 
 def test_per_slug_asl_fallback_when_openrouter_unmatched(config):
     snapshot = {
-        "schema_version": 1,
+        "schema_version": preflight.SCHEMA_VERSION,
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "sources": {
             "openrouter": {
@@ -339,6 +358,7 @@ def test_per_slug_asl_fallback_when_openrouter_unmatched(config):
                             external_id="anthropic/claude-opus-5-20260723",
                             display_name="Claude Opus 5",
                             coding_score=69.4,
+                            intelligence_score=70.0,
                         )
                     ]
                 ),
@@ -364,13 +384,17 @@ def test_per_slug_asl_fallback_when_openrouter_unmatched(config):
     gpt = next(c for c in candidates if c.slug == "gpt-5.5-medium")
     assert gpt.sources == ["aistupidlevel"]
     assert gpt.coding_index == pytest.approx(68.5)
+    assert gpt.intelligence_index is None
+
+    rec = preflight.recommend(config, snapshot)
+    planning_slugs = [p["slug"] for p in rec.tasks["planning"]["picks"]]
+    assert planning_slugs == ["claude-opus-5-thinking-high"]
 
 
-def test_alternatives_only_include_near_ties(config):
-    now = datetime.now(timezone.utc).isoformat()
+def test_asl_coding_backfill_does_not_inherit_openrouter_confidence(config):
     snapshot = {
-        "schema_version": 1,
-        "generated_at": now,
+        "schema_version": preflight.SCHEMA_VERSION,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
         "sources": {
             "openrouter": {
                 "status": "ok",
@@ -378,21 +402,89 @@ def test_alternatives_only_include_near_ties(config):
                     [
                         preflight.Record(
                             source="openrouter_artificial_analysis",
-                            external_id="anthropic/claude-opus-5-20260723",
-                            display_name="Claude Opus 5",
-                            coding_score=69.4,
-                        ),
-                        preflight.Record(
-                            source="openrouter_artificial_analysis",
                             external_id="openai/gpt-5.5-20260423",
                             display_name="GPT-5.5",
-                            coding_score=68.5,
+                            coding_score=None,
+                            intelligence_score=80.0,
+                            output_price_per_million=10.0,
                         ),
                         preflight.Record(
                             source="openrouter_artificial_analysis",
-                            external_id="anthropic/claude-4.6-sonnet-20260217",
-                            display_name="Claude Sonnet 4.6",
-                            coding_score=60.0,
+                            external_id="anthropic/claude-opus-5-20260723",
+                            display_name="Claude Opus 5",
+                            coding_score=40.0,
+                            intelligence_score=40.0,
+                            output_price_per_million=20.0,
+                        ),
+                    ]
+                ),
+            },
+            "aistupidlevel": {
+                "status": "ok",
+                "records": preflight.records_to_json(
+                    [
+                        preflight.Record(
+                            source="aistupidlevel",
+                            external_id="gpt-5.5",
+                            display_name="gpt-5.5",
+                            coding_score=70.0,
+                        )
+                    ]
+                ),
+            },
+        },
+    }
+    rec = preflight.recommend(config, snapshot)
+    assert rec.selected is not None
+    assert rec.selected_model == "gpt-5.5-medium"
+    assert rec.selected.coding_from_openrouter is False
+    assert rec.selected.coding_index == pytest.approx(70.0)
+    assert rec.confidence == "medium"
+    assert rec.tasks["coding"]["confidence"] == "medium"
+    assert "aistupidlevel" in rec.selected.sources
+    assert "openrouter_artificial_analysis" in rec.selected.sources
+
+    planning = rec.tasks["planning"]
+    assert planning["confidence"] == "high"
+    assert planning["picks"][0]["slug"] == "gpt-5.5-medium"
+    assert planning["picks"][0]["reason"] == "highest planning score"
+
+
+def _or_record(external_id, coding, intelligence, price):
+    return preflight.Record(
+        source="openrouter_artificial_analysis",
+        external_id=external_id,
+        display_name=external_id,
+        coding_score=coding,
+        output_price_per_million=price,
+        intelligence_score=intelligence,
+    )
+
+
+def _task_snapshot():
+    return {
+        "schema_version": preflight.SCHEMA_VERSION,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "sources": {
+            "openrouter": {
+                "status": "ok",
+                "records": preflight.records_to_json(
+                    [
+                        _or_record(
+                            "anthropic/claude-opus-5-20260723",
+                            69.4,
+                            70.0,
+                            75.0,
+                        ),
+                        _or_record("openai/gpt-5.5-20260423", 68.5, 70.5, 50.0),
+                        _or_record(
+                            "openai/gpt-5.6-sol-20260709", 66.0, 73.0, 40.0
+                        ),
+                        _or_record(
+                            "anthropic/claude-4.6-sonnet-20260217",
+                            60.0,
+                            60.0,
+                            15.0,
                         ),
                     ]
                 ),
@@ -400,10 +492,49 @@ def test_alternatives_only_include_near_ties(config):
             "aistupidlevel": {"status": "ok", "records": []},
         },
     }
-    rec = preflight.recommend(config, snapshot)
-    alt_slugs = [alt["slug"] for alt in rec.alternatives]
-    assert "gpt-5.5-medium" in alt_slugs
-    assert "claude-4.6-sonnet-medium-thinking" not in alt_slugs
+
+
+def _roles(rec, task):
+    return {p["role"]: p["slug"] for p in rec.tasks[task]["picks"]}
+
+
+def test_task_picks_diverge_between_coding_and_planning(config):
+    rec = preflight.recommend(config, _task_snapshot())
+
+    coding = _roles(rec, "coding")
+    assert coding["strong"] == "claude-opus-5-thinking-high"
+    assert coding["similarly_strong"] == "gpt-5.5-medium"
+    assert rec.selected_model == coding["strong"]
+
+    planning = _roles(rec, "planning")
+    assert planning["strong"] == "gpt-5.6-sol-medium"
+    assert planning["next_best"] == "gpt-5.5-medium"
+    assert "similarly_strong" not in planning
+    assert rec.tasks["planning"]["confidence"] == "high"
+
+
+def test_cost_pick_stays_inside_quality_floor_and_cheaper(config):
+    rec = preflight.recommend(config, _task_snapshot())
+
+    coding = _roles(rec, "coding")
+    assert coding["cost_efficient"] == "gpt-5.6-sol-medium"
+    assert "claude-4.6-sonnet-medium-thinking" not in coding.values()
+    cost_pick = next(
+        p for p in rec.tasks["coding"]["picks"] if p["role"] == "cost_efficient"
+    )
+    strong_pick = next(
+        p for p in rec.tasks["coding"]["picks"] if p["role"] == "strong"
+    )
+    assert cost_pick["output_price_per_million"] < (
+        strong_pick["output_price_per_million"]
+    )
+    assert strong_pick["score"] - cost_pick["score"] <= (
+        config["cost_quality_margin"]
+    )
+
+    # Planning: opus is pricier than the strong pick, sonnet is outside the
+    # floor, so no cost slot.
+    assert "cost_efficient" not in _roles(rec, "planning")
 
 
 def test_load_dotenv_sets_key_when_unset(tmp_path, monkeypatch):
@@ -424,7 +555,7 @@ def test_load_dotenv_does_not_override_existing(tmp_path, monkeypatch):
 
 def test_atomic_write_leaves_no_partial_file(config, tmp_cache):
     snapshot = {
-        "schema_version": 1,
+        "schema_version": preflight.SCHEMA_VERSION,
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "sources": {},
     }
@@ -444,7 +575,7 @@ def test_corrupt_cache_treated_as_missing(tmp_cache, monkeypatch):
 
 def test_collect_unmapped(config):
     snapshot = {
-        "schema_version": 1,
+        "schema_version": preflight.SCHEMA_VERSION,
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "sources": {
             "openrouter": {
@@ -475,7 +606,7 @@ def test_main_invalid_config_exit_code(tmp_path):
 def test_main_select_json(config, tmp_cache, monkeypatch, capsys):
     now = datetime.now(timezone.utc).isoformat()
     snapshot = {
-        "schema_version": 1,
+        "schema_version": preflight.SCHEMA_VERSION,
         "generated_at": now,
         "sources": {
             "openrouter": {
@@ -518,3 +649,5 @@ def test_main_select_json(config, tmp_cache, monkeypatch, capsys):
     payload = json.loads(captured.out)
     assert payload["selected_model"] == "claude-opus-5-thinking-high"
     assert payload["confidence"] in ("high", "medium")
+    assert set(payload["tasks"]) == {"coding", "planning"}
+    assert payload["tasks"]["coding"]["picks"][0]["role"] == "strong"
