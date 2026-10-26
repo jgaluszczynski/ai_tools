@@ -28,23 +28,16 @@ per issue, duplicates and single-reviewer nits dropped.
 
 ## Panel choice
 
-Sonnet 5.5, GPT 5.6 Sol, and Codex 5.3 were requested by name. The fourth
-seat was Grok 4.7, which was the slowest of the group. It was replaced with
-Muse Spark 1.3 using the preflight cache (Artificial Analysis via
-OpenRouter, 2026-10-13) and the Artificial Analysis speed board
-(2026-10-14):
+Sonnet 5.5, GPT 5.6 Sol, Opus 5.5, and Fable were requested by name. The
+Fable seat resolves to the highest available version at run time
+(`claude-fable-5-3-thinking-high`, else `claude-fable-5-1-thinking-high`)
+and is the only seat with a fallback; every other seat is skipped when its
+slug is unavailable.
 
-| Slug | Intelligence | Coding | Output $/M | Output speed |
-| --- | --- | --- | --- | --- |
-| `grok-4.7-high-fast` | 46.4 | - | 6.60 | 86 tok/s |
-| `muse-spark-1.3-high` | 48.1 | 75.8 | 4.25 | 239 tok/s |
-| `gemini-4-argon-medium` | 52.6 | - | 5.00 | not published |
-| `claude-haiku-5-5-thinking-high` | 43.4 | - | 0.55 | 175 tok/s |
-
-Muse Spark 1.3 scores higher than Grok 4.7, costs less, is about 2.8x
-faster, and adds a fourth model family. Gemini 4 Argon scores higher still
-but has no published speed, so it is the documented fallback for that seat.
-Haiku is cheapest but scores below Grok and shares a family with Sonnet.
+Earlier versions of the panel used Grok 4.7, then Muse Spark 1.3 with
+Gemini 4 Argon as fallback, and Codex 5.3. Those seats were replaced by
+Opus 5.5 and Fable, which trade model-family diversity for the two
+strongest Anthropic reviewers.
 
 Bugbot and Security Review run alongside the panel because they use their
 own harnesses and prompts, which adds coverage the model panel does not

@@ -1,8 +1,9 @@
 ---
 name: review-ensemble
 description: >-
-  Run a multi-model code review: launch Sonnet 5.5, GPT 5.6 Sol, Muse Spark
-  1.3, and Codex 5.3 as parallel read-only reviewers on the same diff, run
+  Run a multi-model code review: launch Sonnet 5.5, GPT 5.6 Sol, Opus 5.5,
+  and the highest available Fable (5.3, else 5.1) as parallel read-only
+  reviewers on the same diff, run
   Bugbot and Security Review alongside them, then merge every finding into
   one deduplicated findings table with numbered fix proposals so most GitHub
   review comments are closed in a single implementation pass. Use when the
@@ -22,9 +23,11 @@ comments, or open a pull request unless the user asks for that next.
 
 ## Reviewers
 
-Six reviewers run in parallel. Cross-check every model slug against the
-models available in this session. Skip any slug that is unavailable, do not
-substitute another model, and tell the user which were skipped.
+Six reviewers run in parallel. Before launching, resolve every model slug
+against the list of models available in this session (the
+`available_subagent_models` list). Use a slug only if it appears there
+verbatim. Skip any seat whose slug is unavailable, do not substitute another
+model, and tell the user which seats were skipped.
 
 Model panel, each a `generalPurpose` subagent with `model` set to the slug:
 
@@ -32,11 +35,17 @@ Model panel, each a `generalPurpose` subagent with `model` set to the slug:
 | --- | --- | --- |
 | `sonnet` | `claude-sonnet-5-5-high` | Highest intelligence index of the group |
 | `sol` | `gpt-5.6-sol-medium` | Highest coding index of the group |
-| `muse` | `muse-spark-1.3-high` | Cheap, fastest output, fourth model family |
-| `codex` | `gpt-5.3-codex` | Code-specialized reviewer requested for the panel |
+| `opus` | `claude-opus-5-5-medium` | Strongest Anthropic generalist, different tier from Sonnet |
+| `fable` | highest available Fable, see below | Current strong pick for coding and planning |
 
-If `muse-spark-1.3-high` is unavailable, use `gemini-4-argon-medium` in that
-seat and say so. That is the only substitution allowed.
+The `fable` seat is the only one with a fallback. Resolve it in this order
+and stop at the first slug that is available:
+
+1. `claude-fable-5-3-thinking-high`
+2. `claude-fable-5-1-thinking-high`
+
+Name the resolved slug when launching. If neither is available, skip the
+seat and say so. No other substitution is allowed in any seat.
 
 Complementary reviewers, each with its own subagent type:
 
@@ -51,10 +60,11 @@ and say so. Do not review in place for it; the model panel covers that.
 ## Merger
 
 The parent agent (this chat) merges. It is a synthesis step and does not act
-as a seventh reviewer. If the chat model differs from
-`claude-fable-5-1-thinking-high`, say so once before launching; that slug is
-the current strong pick for planning and coding, and the merge is synthesis
-plus precise edit instructions.
+as a seventh reviewer. If the chat model differs from the slug resolved for
+the `fable` seat, say so once before launching; that slug is the current
+strong pick for planning and coding, and the merge is synthesis plus precise
+edit instructions. The chat model running the merge and the `fable` reviewer
+being the same model is expected and is not a reason to skip the seat.
 
 ## Run
 
@@ -170,7 +180,7 @@ Print exactly these sections.
 | # | Sev | Category | Location | Finding | Agreed by |
 | --- | --- | --- | --- | --- | --- |
 | 1 | high | correctness | `src/auth.py:40-58` | Token expiry checked after DB lookup, expired tokens hit the database | sonnet, sol, bugbot |
-| 2 | medium | security | `src/api.py:112` | Path from query string joined without normalization | security, codex |
+| 2 | medium | security | `src/api.py:112` | Path from query string joined without normalization | security, fable |
 
 Use the short names from the reviewer tables in `Agreed by`. Keep each
 Finding to one sentence.
@@ -198,5 +208,6 @@ One list of tests or commands that covers every fix.
 - `Omitted N findings (M duplicates, K single-reviewer low, J unverified, I out of diff).`
 - Reviewers that reported, and any that were skipped or failed, or
   `All six reviewers reported.`
+- The slug resolved for the `fable` seat.
 
 Never claim the panel is the best set of reviewers for this repository.
