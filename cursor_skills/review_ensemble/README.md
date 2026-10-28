@@ -20,6 +20,10 @@ ln -sfn "$(pwd)" ~/.cursor/skills/review-ensemble
 Invoke it explicitly with `/review-ensemble`. The skill has
 `disable-model-invocation: true`, so the agent loads it only when named.
 
+When the run finishes, the skill opens `report.md` in the current Cursor
+window with `cursor -r`. The CLI cannot open a Markdown preview directly,
+so press `Cmd+Shift+V` in the opened file to get the rendered view.
+
 ## Why a panel
 
 GitHub's [ReviewBench](https://review-bench.ai/) leaderboard (2026-10 capture)
