@@ -291,7 +291,22 @@ chat only orchestrates.
    Write report.md there and reply with the one line that file asks for.
    ```
 
-9. Print the Output.
+9. Open the report in the current IDE window. The `cursor` CLI has no
+   option to open a Markdown preview, so open the file itself with
+   `-r` (reuse the current window); the user can press `Cmd+Shift+V` for
+   the preview. Try the commands in this order, stop at the first that
+   succeeds, and ignore failure (the report path is printed anyway):
+
+   ```bash
+   REPORT="$RUN_DIR/report.md"
+   cursor -r "$REPORT" 2>/dev/null \
+     || /Applications/Cursor.app/Contents/Resources/app/bin/cursor -r "$REPORT" 2>/dev/null \
+     || true
+   ```
+
+   If the shell sandbox blocks it, rerun with `required_permissions:
+   ["all"]` for this one command.
+10. Print the Output.
 
 ## Output
 
