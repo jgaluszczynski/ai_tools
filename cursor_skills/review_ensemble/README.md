@@ -20,9 +20,13 @@ ln -sfn "$(pwd)" ~/.cursor/skills/review-ensemble
 Invoke it explicitly with `/review-ensemble`. The skill has
 `disable-model-invocation: true`, so the agent loads it only when named.
 
-When the run finishes, the skill opens `report.md` in the current Cursor
-window with `cursor -r`. The CLI cannot open a Markdown preview directly,
-so press `Cmd+Shift+V` in the opened file to get the rendered view.
+When the run finishes, the skill stamps `report.md` with the reviewed
+commit, base, working-tree state, and completion time, then opens it both
+in the current Cursor window (`cursor -r`) and in TextEdit (`open -e`) so
+a window always appears and the text can be copied from either. Both
+commands run outside the shell sandbox, which blocks them. The Cursor CLI
+cannot open a Markdown preview directly, so press `Cmd+Shift+V` in the
+opened tab to get the rendered view.
 
 ## Why a panel
 
@@ -37,10 +41,12 @@ per issue, duplicates and single-reviewer nits dropped.
 ## Panel choice
 
 Sonnet 5.5, GPT 5.6 Sol, Opus 5.5, and Fable were requested by name. The
-Fable seat resolves to the highest available version at run time
-(`claude-fable-5-3-thinking-high`, else `claude-fable-5-1-thinking-high`)
-and is the only seat with a fallback; every other seat is skipped when its
-slug is unavailable.
+Fable seat is fixed to `claude-fable-5-1-thinking-high` (5.3 is no longer
+offered). The Opus slug is not offered in every session, so that seat
+falls back to `claude-opus-5-thinking-high`, then `gemini-4-argon-medium`,
+in order of the 2026-11-03 preflight snapshot scores; it is the only seat
+with a fallback, and every other seat is skipped when its slug is
+unavailable.
 
 Earlier versions of the panel used Grok 4.7, then Muse Spark 1.3 with
 Gemini 4 Argon as fallback, and Codex 5.3. Those seats were replaced by
