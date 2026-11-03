@@ -310,7 +310,7 @@ chat only orchestrates.
    MODIFIED=$(grep -c '^diff --git' "$RUN_DIR/worktree.patch")
    UNTRACKED=$(grep -c . "$RUN_DIR/untracked.txt")
    DIGEST=$({ cat "$RUN_DIR/diff.patch" "$RUN_DIR/worktree.patch"
-              while IFS= read -r f; do cat "$f"; done < "$RUN_DIR/untracked.txt"; } 2>/dev/null \
+              while IFS= read -r f; do printf '%s\0' "$f"; shasum -a 256 < "$f"; done < "$RUN_DIR/untracked.txt"; } 2>/dev/null \
             | shasum -a 256 | cut -c1-16)
    {
      printf '# Review of %s @ %s\n\n' "$(basename "$REPO")" "$(git rev-parse --short "$HEAD_SHA")"
