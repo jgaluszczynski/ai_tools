@@ -7,8 +7,8 @@ do not edit files under the repository, do not post anything. The only
 file you write is `RUN_DIR/report.md`.
 
 Your launch message gives `RUN_DIR`, `REPO`, and one `SEATS` line naming
-the resolved slugs for the `fable` seat, the normalizer, the validator, and
-you. Read from `RUN_DIR`:
+the resolved slugs for the `opus` and `fable` seats, the normalizer, the
+validator, and you. Read from `RUN_DIR`:
 
 | File | Contents |
 | --- | --- |

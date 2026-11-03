@@ -1,9 +1,9 @@
 ---
 name: review-ensemble
 description: >-
-  Run a multi-model code review: launch Sonnet 5.5, GPT 5.6 Sol, Opus 5.5,
-  and the highest available Fable (5.3, else 5.1) as parallel read-only
-  reviewers on the same diff, run Bugbot and Security Review alongside
+  Run a multi-model code review: launch Sonnet 5.5, GPT 5.6 Sol, Opus 5.5
+  (or the strongest available fallback), and Fable 5.1 as parallel
+  read-only reviewers on the same diff, run Bugbot and Security Review alongside
   them, normalize and deduplicate their output with a cheap model, validate
   every candidate with an independent model, merge with a script, and have
   a cheap merger write one deduplicated findings table with numbered fix
@@ -47,21 +47,29 @@ model, and tell the user which seats were skipped.
 
 Model panel, each a `generalPurpose` subagent with `model` set to the slug:
 
+Scores are the Artificial Analysis indices from the coding-model-preflight
+snapshot of 2026-11-03 (intelligence / coding; a dash means no score yet):
+
 | Short name | Slug | Why it is on the panel |
 | --- | --- | --- |
-| `sonnet` | `claude-sonnet-5-5-high` | Highest intelligence index of the group |
-| `sol` | `gpt-5.6-sol-medium` | Highest coding index of the group |
-| `opus` | `claude-opus-5-5-medium` | Strongest Anthropic generalist, different tier from Sonnet |
-| `fable` | highest available Fable, see below | Current strong pick for coding and planning |
+| `sonnet` | `claude-sonnet-5-5-high` | Intelligence 54.2 / coding -, second-highest intelligence index of any available slug |
+| `sol` | `gpt-5.6-sol-medium` | Intelligence - / coding 78.3, highest non-Anthropic coding index; the only non-Anthropic seat |
+| `opus` | `claude-opus-5-5-medium`, see below | Intelligence 58.4 / coding -, highest intelligence index of any available slug, different tier from Sonnet |
+| `fable` | `claude-fable-5-1-thinking-high` | Intelligence 49.7 / coding 80.7, highest coding index of any available slug |
 
-The `fable` seat is the only one with a fallback. Resolve it in this order
-and stop at the first slug that is available:
+The `opus` seat is the only one with a fallback, because its slug is not
+offered in every session. Resolve it in this order and stop at the first
+slug that is available:
 
-1. `claude-fable-5-3-thinking-high`
-2. `claude-fable-5-1-thinking-high`
+1. `claude-opus-5-5-medium`
+2. `claude-opus-5-thinking-high` (coding 78.0, the next-strongest Anthropic
+   slug outside the panel)
+3. `gemini-4-argon-medium` (intelligence 50.4, the strongest non-Anthropic
+   slug outside the panel)
 
-Name the resolved slug when launching. If neither is available, skip the
-seat and say so. No other substitution is allowed in any seat.
+Name the resolved slug when launching. If none is available, skip the
+seat and say so. No other substitution is allowed in any seat. (Fable 5.3
+is no longer offered; the `fable` seat is fixed to 5.1.)
 
 Complementary reviewers, each with its own subagent type:
 
@@ -103,7 +111,9 @@ the panel:
 
 1. `gpt-5.6-sol-medium`
 2. Otherwise the first available slug in `available_subagent_models` whose
-   name does not start with `claude-`.
+   name does not start with `claude-` and that was not resolved for any
+   panel seat (in particular, not `gemini-4-argon-medium` when the `opus`
+   seat fell back to it).
 3. If none is available, run the merge with `--no-validator` (every
    candidate counts as unchecked: single-reviewer rows drop, rows with two
    or more reviewers keep their reviewers' severity) and say so in
@@ -287,36 +297,64 @@ chat only orchestrates.
    ```text
    Read and follow <SKILL_DIR>/prompts/merger.md.
    RUN_DIR=<RUN_DIR>  REPO=<REPO>
-   SEATS: fable=<slug or skipped>, normalizer=<slug or merger normalized>, validator=<slug or none>, merger=<slug>
+   SEATS: opus=<slug or skipped>, fable=<slug or skipped>, normalizer=<slug or merger normalized>, validator=<slug or none>, merger=<slug>
    Write report.md there and reply with the one line that file asks for.
    ```
 
-9. Open the report in the current IDE window. The `cursor` CLI has no
-   option to open a Markdown preview, so open the file itself with
-   `-r` (reuse the current window); the user can press `Cmd+Shift+V` for
-   the preview. Try the commands in this order, stop at the first that
-   succeeds, and ignore failure (the report path is printed anyway):
+9. Stamp the report. Prepend a fingerprint of what was reviewed and when
+   the review finished, so a pasted report can be matched to its commit:
 
    ```bash
-   REPORT="$RUN_DIR/report.md"
-   cursor -r "$REPORT" 2>/dev/null \
-     || /Applications/Cursor.app/Contents/Resources/app/bin/cursor -r "$REPORT" 2>/dev/null \
-     || true
+   cd "$REPO"
+   HEAD_SHA=$(cat "$RUN_DIR/head_sha")
+   MODIFIED=$(grep -c '^diff --git' "$RUN_DIR/worktree.patch")
+   UNTRACKED=$(grep -c . "$RUN_DIR/untracked.txt")
+   DIGEST=$({ cat "$RUN_DIR/diff.patch" "$RUN_DIR/worktree.patch"
+              while IFS= read -r f; do printf '%s\0' "$f"; shasum -a 256 < "$f"; done < "$RUN_DIR/untracked.txt"; } 2>/dev/null \
+            | shasum -a 256 | cut -c1-16)
+   {
+     printf '# Review of %s @ %s\n\n' "$(basename "$REPO")" "$(git rev-parse --short "$HEAD_SHA")"
+     printf -- '- Commit: `%s` %s (%s)\n' "$HEAD_SHA" "$(git log -1 --format=%s "$HEAD_SHA")" "$(git branch --show-current)"
+     printf -- '- Base: `%s` (mode: %s)\n' "$(cat "$RUN_DIR/base_sha")" "$(cat "$RUN_DIR/diff_mode")"
+     printf -- '- Working tree included: %s modified, %s untracked file(s)\n' "$MODIFIED" "$UNTRACKED"
+     printf -- '- Diff digest: `sha256:%s` (diff.patch + worktree.patch + untracked contents)\n' "$DIGEST"
+     printf -- '- Review completed: %s\n\n' "$(date '+%Y-%m-%d %H:%M:%S %Z')"
+     cat "$RUN_DIR/report.md"
+   } > "$RUN_DIR/report.tmp" && mv "$RUN_DIR/report.tmp" "$RUN_DIR/report.md"
+   head -7 "$RUN_DIR/report.md"
    ```
 
-   If the shell sandbox blocks it, rerun with `required_permissions:
-   ["all"]` for this one command.
-10. Print the Output.
+10. Open the report twice: in the current IDE window and in TextEdit, so a
+    window always pops up when the review is ready and the text can be
+    copied from either. Run this one command with `required_permissions:
+    ["all"]` on the first attempt, not as a retry: inside the sandbox
+    `open` cannot reach LaunchServices and the Cursor CLI fails its
+    codesign check, which is why the report used to open only sometimes.
+    The `cursor` binary is not on the agent shell's `PATH`, so use the
+    absolute path. The CLI cannot open a Markdown preview; the user can
+    press `Cmd+Shift+V` in the opened tab.
+
+    ```bash
+    REPORT="$RUN_DIR/report.md"
+    /Applications/Cursor.app/Contents/Resources/app/bin/cursor -r "$REPORT"; echo "cursor exit=$?"
+    open -e "$REPORT"; echo "textedit exit=$?"
+    ```
+
+    If either exit code is non-zero, say so in the Output instead of
+    ignoring it.
+11. Print the Output.
 
 ## Output
 
 Print exactly this and nothing more:
 
-1. The `summary.md` content from step 7 (Verdict, Findings table,
+1. The `Commit:` and `Review completed:` lines from the stamp in step 9.
+2. The `summary.md` content from step 7 (Verdict, Findings table,
    `Deferred:` line when present, the two Coverage count lines).
-2. One line naming any reviewer that was skipped or failed, or
+3. One line naming any reviewer that was skipped or failed, or
    `All six reviewers reported.`
-3. `Report: <RUN_DIR>/report.md`
+4. `Report: <RUN_DIR>/report.md`, plus `(did not open in <cursor|textedit>)`
+   when step 10 reported a non-zero exit.
 
 The Fixes, Verify all, and full Coverage sections live in `report.md`.
 Offer to apply the fixes next; do not apply them unasked.
