@@ -21,7 +21,8 @@ Invoke it explicitly with `/review-ensemble`. The skill has
 `disable-model-invocation: true`, so the agent loads it only when named.
 
 When the run finishes, the skill stamps `report.md` with the reviewed
-commit, base, working-tree state, and completion time, then opens it both
+commit, base, working-tree state, a sha256 digest of the reviewed patches
+and untracked files, and completion time, then opens it both
 in the current Cursor window (`cursor -r`) and in TextEdit (`open -e`) so
 a window always appears and the text can be copied from either. Both
 commands run outside the shell sandbox, which blocks them. The Cursor CLI

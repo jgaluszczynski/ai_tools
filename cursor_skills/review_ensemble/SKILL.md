@@ -111,7 +111,9 @@ the panel:
 
 1. `gpt-5.6-sol-medium`
 2. Otherwise the first available slug in `available_subagent_models` whose
-   name does not start with `claude-`.
+   name does not start with `claude-` and that was not resolved for any
+   panel seat (in particular, not `gemini-4-argon-medium` when the `opus`
+   seat fell back to it).
 3. If none is available, run the merge with `--no-validator` (every
    candidate counts as unchecked: single-reviewer rows drop, rows with two
    or more reviewers keep their reviewers' severity) and say so in
@@ -307,15 +309,19 @@ chat only orchestrates.
    HEAD_SHA=$(cat "$RUN_DIR/head_sha")
    MODIFIED=$(grep -c '^diff --git' "$RUN_DIR/worktree.patch")
    UNTRACKED=$(grep -c . "$RUN_DIR/untracked.txt")
+   DIGEST=$({ cat "$RUN_DIR/diff.patch" "$RUN_DIR/worktree.patch"
+              while IFS= read -r f; do cat "$f"; done < "$RUN_DIR/untracked.txt"; } 2>/dev/null \
+            | shasum -a 256 | cut -c1-16)
    {
      printf '# Review of %s @ %s\n\n' "$(basename "$REPO")" "$(git rev-parse --short "$HEAD_SHA")"
      printf -- '- Commit: `%s` %s (%s)\n' "$HEAD_SHA" "$(git log -1 --format=%s "$HEAD_SHA")" "$(git branch --show-current)"
      printf -- '- Base: `%s` (mode: %s)\n' "$(cat "$RUN_DIR/base_sha")" "$(cat "$RUN_DIR/diff_mode")"
      printf -- '- Working tree included: %s modified, %s untracked file(s)\n' "$MODIFIED" "$UNTRACKED"
+     printf -- '- Diff digest: `sha256:%s` (diff.patch + worktree.patch + untracked contents)\n' "$DIGEST"
      printf -- '- Review completed: %s\n\n' "$(date '+%Y-%m-%d %H:%M:%S %Z')"
      cat "$RUN_DIR/report.md"
    } > "$RUN_DIR/report.tmp" && mv "$RUN_DIR/report.tmp" "$RUN_DIR/report.md"
-   head -6 "$RUN_DIR/report.md"
+   head -7 "$RUN_DIR/report.md"
    ```
 
 10. Open the report twice: in the current IDE window and in TextEdit, so a
