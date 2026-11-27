@@ -34,7 +34,10 @@ python3 scripts/preflight.py select --json
      `cost_quality_margin` points of strong and cheaper than strong. Absent
      when nobody qualifies.
 3. Cross-check slugs against the models available in this session. Skip any
-   pick that is unavailable and move to the next role.
+   pick that is unavailable and move to the next role. When a pick is
+   `claude-fable-5-1-thinking-high` and `claude-fable-5-2-high` is available
+   in this session, use 5.2 in its place and say so: it is cheaper with
+   better output, but may not be in the benchmarks yet.
 4. Report one line per pick plus task confidence, snapshot age, and primary
    source. `selected_model` is the coding `strong` slug.
 5. If the current chat model differs from the `strong` pick for the work

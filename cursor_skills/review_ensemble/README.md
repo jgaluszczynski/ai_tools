@@ -42,8 +42,8 @@ per issue, duplicates and single-reviewer nits dropped.
 ## Panel choice
 
 Sonnet 5.5, GPT 5.6 Sol, Opus 5.5, and Fable were requested by name. The
-Fable seat is fixed to `claude-fable-5-1-thinking-high` (5.3 is no longer
-offered). The Opus slug is not offered in every session, so that seat
+Fable seat is fixed to `claude-fable-5-2-high` (5.3 is no longer offered;
+5.2 replaced 5.1 for lower cost and better output). The Opus slug is not offered in every session, so that seat
 falls back to `claude-opus-5-thinking-high`, then `gemini-4-argon-medium`,
 in order of the 2026-11-03 preflight snapshot scores; it is the only seat
 with a fallback, and every other seat is skipped when its slug is

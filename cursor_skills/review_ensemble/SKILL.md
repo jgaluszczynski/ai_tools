@@ -2,7 +2,7 @@
 name: review-ensemble
 description: >-
   Run a multi-model code review: launch Sonnet 5.5, GPT 5.6 Sol, Opus 5.5
-  (or the strongest available fallback), and Fable 5.1 as parallel
+  (or the strongest available fallback), and Fable 5.2 as parallel
   read-only reviewers on the same diff, run Bugbot and Security Review alongside
   them, normalize and deduplicate their output with a cheap model, validate
   every candidate with an independent model, merge with a script, and have
@@ -55,7 +55,7 @@ snapshot of 2026-11-03 (intelligence / coding; a dash means no score yet):
 | `sonnet` | `claude-sonnet-5-5-high` | Intelligence 54.2 / coding -, second-highest intelligence index of any available slug |
 | `sol` | `gpt-5.6-sol-medium` | Intelligence - / coding 78.3, highest non-Anthropic coding index; the only non-Anthropic seat |
 | `opus` | `claude-opus-5-5-medium`, see below | Intelligence 58.4 / coding -, highest intelligence index of any available slug, different tier from Sonnet |
-| `fable` | `claude-fable-5-1-thinking-high` | Intelligence 49.7 / coding 80.7, highest coding index of any available slug |
+| `fable` | `claude-fable-5-2-high` | Not scored yet; successor to Fable 5.1 (intelligence 49.7 / coding 80.7, highest coding index of any scored slug), cheaper with better output |
 
 The `opus` seat is the only one with a fallback, because its slug is not
 offered in every session. Resolve it in this order and stop at the first
@@ -69,7 +69,7 @@ slug that is available:
 
 Name the resolved slug when launching. If none is available, skip the
 seat and say so. No other substitution is allowed in any seat. (Fable 5.3
-is no longer offered; the `fable` seat is fixed to 5.1.)
+is no longer offered; the `fable` seat is fixed to 5.2.)
 
 Complementary reviewers, each with its own subagent type:
 

@@ -73,7 +73,10 @@ python3 scripts/preflight.py select --json
 1. Take `tasks.planning.picks` in order `strong`, `similarly_strong` or
    `next_best`, `cost_efficient`; the first slug available in this session
    (the session's subagent model list) is the planning model, used for the
-   chat and for Phase 3 delegation. Note which role was used. If the script
+   chat and for Phase 3 delegation. If that pick is
+   `claude-fable-5-1-thinking-high` and `claude-fable-5-2-high` is
+   available, use 5.2 instead (cheaper, better output, may not be
+   benchmarked yet). Note which role was used. If the script
    is missing, exits non-zero, prints non-JSON, or no pick is available,
    say so in one line, continue on the current chat model, and write
    `Preflight: unavailable` in the plan header.
